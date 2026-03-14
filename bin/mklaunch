@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+GAMES_ROOT="${1:-$HOME/Games}"
+IGNORE_FILE="$GAMES_ROOT/.runignore"
+GLOBAL_PREFIX="$HOME/.wine_gaming_bottle"
+
+cd "$GAMES_ROOT" || { echo "Games root not found"; exit 1; }
+touch "$IGNORE_FILE"
+
+# Presets (The "Potato" Defaults)
+GODOT_POTATO="--rendering-driver opengl3"
+UNITY_POTATO="-force-opengl -screen-quality fast"
+
+while true; do
+    echo "Searching for messy executables..."
+    RAW_FIND=$( {
+        find . -maxdepth 3 -not -path '*/.*' -type f -executable -printf '🐧\t%P\n'
+        find . -maxdepth 3 -not -path '*/.*' -type f -iname '*.exe' -printf '💻\t%P\n'
+    } | sort -u | grep -vFf "$IGNORE_FILE" - || true )
+
+    RAW_LIST=""
+    while IFS=$'\t' read -r icon rel; do
+        [ -z "$rel" ] && continue
+        if head -n 5 "$rel" 2>/dev/null | grep -q "# ICON:"; then continue; fi
+        RAW_LIST+="${icon}\t${rel}\n"
+    done <<< "$RAW_FIND"
+
+    if [ -z "$RAW_LIST" ]; then echo "No new executables found."; exit 0; fi
+
+    IFS=$'\n' read -r -d '' -a out < <(echo -e "$RAW_LIST" | \
+        fzf --height=40% --border --prompt="Wrap file (Tab to ignore): " \
+            --expect=tab,enter --delimiter=$'\t' --with-nth=2 && printf '\0')
+
+    [ ${#out[@]} -eq 0 ] && exit 1
+    key="${out[0]}"
+    SEL="${out[1]:-}"
+    [ -z "$SEL" ] && continue
+    ICON="${SEL%%$'\t'*}"; REL_PATH="${SEL#*$'\t'*}"
+
+    if [ "$key" = "tab" ]; then
+        if ! grep -Fxq -- "$REL_PATH" "$IGNORE_FILE"; then
+            printf '%s\n' "$REL_PATH" >> "$IGNORE_FILE"
+        fi
+        continue
+    fi
+
+    ABS_PATH=$(realpath "$REL_PATH"); GAME_DIR=$(dirname "$ABS_PATH"); EXEC_NAME=$(basename "$ABS_PATH")
+    AUTO_FLAGS=""
+    ENV_VARS="SDL_VIDEODRIVER=x11"
+    WINE_CONFIG_TYPE=""
+
+    if [[ "$ICON" == "💻" ]]; then
+        ENV_VARS="GDK_BACKEND=x11 SDL_VIDEODRIVER=x11"
+        echo "--- Wine Prefix Choice ---"
+        echo "1) Private | 2) Global ($GLOBAL_PREFIX)"
+        read -p "Choice [1/2, default 1]: " p_choice
+        [[ "$p_choice" == "2" ]] && WINE_CONFIG_TYPE="global" || WINE_CONFIG_TYPE="private"
+    elif ls "$GAME_DIR"/*.pck >/dev/null 2>&1; then AUTO_FLAGS="$GODOT_POTATO"
+    elif [ -d "${ABS_PATH%.*}_Data" ] || [ -d "$GAME_DIR/Data" ]; then AUTO_FLAGS="$UNITY_POTATO"
+    fi
+
+    echo "--- Suggested Flags: $AUTO_FLAGS ---"
+    read -p "Add custom flags (Shortcuts: 'lowres', 'window', 'safe'): " USER_INPUT
+    
+    # APPEND LOGIC: User input appends to Auto-flags unless a shortcut is used
+    case "$USER_INPUT" in
+        lowres) FINAL_FLAGS="$AUTO_FLAGS -screen-width 1280 -screen-height 720" ;;
+        window)    FINAL_FLAGS="$AUTO_FLAGS -windowed" ;;
+        safe)   FINAL_FLAGS="$AUTO_FLAGS -windowed -screen-width 800 -screen-height 600" ;;
+        *)      FINAL_FLAGS="$AUTO_FLAGS $USER_INPUT" ;;
+    esac
+
+    read -p "Launcher Name (Default: play.sh): " L_NAME
+    L_NAME=${L_NAME:-play.sh}
+    L_PATH="$GAME_DIR/$L_NAME"
+
+    cat <<EOF > "$L_PATH"
+#!/usr/bin/env bash
+# ICON: $ICON
+# Game: $EXEC_NAME
+cd "\$(dirname "\$0")"
+export $ENV_VARS
+$( [[ "$WINE_CONFIG_TYPE" == "private" ]] && echo 'export WINEPREFIX="$PWD/.wine"' )
+$( [[ "$WINE_CONFIG_TYPE" == "global" ]] && echo "export WINEPREFIX=\"$GLOBAL_PREFIX\"" )
+$( [[ "$ICON" == "💻" ]] && echo 'export WINEDEBUG=-all' )
+$( [[ "$ICON" == "💻" ]] && echo 'export WINE_D3D_CONFIG="renderer=opengl"' )
+
+$( [[ "$ICON" == "💻" ]] \
+    && echo "wine \"./$EXEC_NAME\" $FINAL_FLAGS \"\$@\"" \
+    || echo "./\"$EXEC_NAME\" $FINAL_FLAGS \"\$@\"" )
+EOF
+
+    chmod +x "$L_PATH"
+    if ! grep -Fxq -- "$REL_PATH" "$IGNORE_FILE"; then printf '%s\n' "$REL_PATH" >> "$IGNORE_FILE"; fi
+    echo "✅ Created $L_NAME with: $FINAL_FLAGS"
+    break
+done
