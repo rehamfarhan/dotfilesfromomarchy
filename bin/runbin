@@ -1,0 +1,43 @@
+#!/bin/bash
+# run-bin-game: pick and run an executable (forces X11 via SDL_VIDEODRIVER)
+# Requires: fzf
+set -e
+
+GAMES_ROOT="${1:-$HOME/Games}"
+
+command -v fzf >/dev/null 2>&1 || { echo "fzf required"; exit 1; }
+
+cd "$GAMES_ROOT" || { echo "games root not found: $GAMES_ROOT"; exit 1; }
+
+# find executable files in top-level dirs and current dir
+mapfile -t execs < <(find . -maxdepth 2 -type f -executable -printf '%P\n' | sed 's|^\./||' | sort)
+
+[ ${#execs[@]} -eq 0 ] && { echo "No executables found in $GAMES_ROOT"; exit 1; }
+
+# choose with fzf (single select)
+if [ ${#execs[@]} -gt 1 ]; then
+    selected="$(printf '%s\n' "${execs[@]}" | fzf --prompt="Select executable: ")"
+    [ -z "$selected" ] && exit 1
+else
+    selected="${execs[0]}"
+fi
+
+# full path and working dir
+SEL_PATH="$(realpath "$selected")"
+SEL_DIR="$(dirname "$SEL_PATH")"
+
+cd "$SEL_DIR" || exit 1
+
+# run: if attached to a tty, run foreground; otherwise detach
+export SDL_VIDEODRIVER=x11
+
+if [ -t 1 ]; then
+    # run in foreground so terminal shows logs
+    exec "$SEL_PATH"
+else
+    # detach for GUI/keybind usage
+    setsid "$SEL_PATH" >/dev/null 2>&1 &
+    disown || true
+    exit 0
+fi
+
