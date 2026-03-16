@@ -1,0 +1,63 @@
+# Endgame Monochrome Shell - Unified Mid-Grey
+palette = "grey"
+scan_timeout = 120
+
+format = """$username$hostname$directory$fill $git_branch$git_status$python$package$aws$terraform$memory_usage$cmd_duration$time$line_break$character"""
+
+[palettes.grey]
+void = "#333333"   # Slightly brighter for distinguishable separation
+mid = "#888888"    # Unified "mid" for all primary elements
+
+[character]
+success_symbol = "[@](bold mid)" 
+error_symbol = "[@](bold void)"   # Dims the symbol on error for subtle feedback
+
+[directory]
+style = "bold mid"
+truncation_length = 100
+truncate_to_repo = false
+
+[fill]
+symbol = '─'
+style = 'void'
+
+[cmd_duration]
+min_time = 2000
+format = "[$duration](italic mid) "
+
+[time]
+disabled = false
+# Format: Tue. 17 Feb. 󱦟 10:57 PM
+time_format = "%a. %d %b 󱦟 %I:%M %p" 
+style = "bold mid"
+format = '[$time]($style)'
+
+[memory_usage]
+disabled = false
+threshold = 50
+symbol = "󰍛 "
+style = "bold mid"
+format = "[$symbol$percentage]($style) "
+
+[git_branch]
+symbol = "󰊢 "
+style = "bold mid"
+format = "[$symbol$branch]($style) "
+
+[git_status]
+style = "bold mid"
+format = "([$all_status$ahead_behind]($style)) "
+
+[python]
+symbol = "󱔎 "
+style = "bold mid"
+format = "[$symbol$virtualenv]($style) "
+
+[package]
+symbol = "󰏗 "
+style = "bold mid"
+format = "[$symbol$version]($style) "
+
+[terraform]
+symbol = "󱁢 "
+style = "bold mid"
